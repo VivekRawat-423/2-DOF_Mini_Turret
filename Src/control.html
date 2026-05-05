@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pan/Tilt Laser Control</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Courier New', monospace;
+    background: #0a0e14; color: #c5d1de;
+    min-height: 100vh; padding: 1.5rem;
+  }
+  h1 {
+    font-size: 15px; font-weight: 500; letter-spacing: .1em;
+    text-transform: uppercase; margin-bottom: 1.5rem;
+    padding-bottom: .75rem; border-bottom: 1px solid #1f2a38;
+  }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+  @media (max-width: 520px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: #0f1724; border: 1px solid #1f2a38; border-radius: 10px; padding: 1rem; }
+  .card-title { font-size: 10px; color: #5a7a9e; letter-spacing: .08em; text-transform: uppercase; margin-bottom: .75rem; }
+
+  .status-row { display: flex; gap: .5rem; align-items: center; margin-bottom: .5rem; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #1f2a38; flex-shrink: 0; }
+  .dot.on   { background: #3dff8f; }
+  .dot.warn { background: #f0a500; }
+  .dot.fire { background: #e24b4a; animation: blink .4s infinite; }
+  .dot.solid { background: #e24b4a; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.25} }
+  .lbl { font-size: 12px; color: #7a96b5; }
+  .val { font-size: 13px; color: #c5d1de; font-weight: 500; margin-left: auto; }
+
+  .pos-display { display: flex; gap: .5rem; margin: .5rem 0; }
+  .pos-box { flex: 1; background: #060c14; border: 1px solid #1f2a38; border-radius: 6px; padding: .5rem; text-align: center; }
+  .pos-box .axis { font-size: 10px; color: #5a7a9e; }
+  .pos-box .deg  { font-size: 18px; color: #89c4f4; font-weight: 500; }
+  .pos-bar  { height: 4px; background: #1f2a38; border-radius: 2px; margin: .35rem 0; overflow: hidden; }
+  .pos-fill { height: 100%; background: #378add; border-radius: 2px; transition: width .06s; }
+
+  .ping-row { display: flex; gap: .5rem; align-items: center; margin-top: .35rem; }
+  .ping-val { font-size: 11px; color: #3d5a7a; }
+  .ping-val span { color: #3dff8f; }
+
+  .log { height: 64px; overflow-y: auto; font-size: 10px; color: #3d5a7a; padding: .4rem;
+         background: #060c14; border: 1px solid #1f2a38; border-radius: 6px; margin-top: .5rem; }
+  .log .hi   { color: #89c4f4; }
+  .log .fire { color: #e24b4a; }
+  .log .demo { color: #f0a500; }
+  .log .warn { color: #f0a500; }
+
+  .dpad { display: grid; grid-template-columns: repeat(3,50px); grid-template-rows: repeat(3,50px);
+          gap: 4px; justify-content: center; margin: 0 auto; }
+  .dpad button {
+    background: #131d2b; border: 1px solid #253447; border-radius: 6px;
+    color: #7a96b5; font-size: 20px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    width: 50px; height: 50px; transition: background .06s, border-color .06s;
+    user-select: none; -webkit-user-select: none; touch-action: manipulation;
+  }
+  .dpad button:active, .dpad button.pressed { background: #1d3050; border-color: #378add; color: #89c4f4; }
+  .dpad .fire-center { border-radius: 50%; background: #1a0f14; border-color: #5a2030; }
+  .dpad .fire-center:active, .dpad .fire-center.pressed { background: #4a1020; border-color: #e24b4a; color: #e24b4a; }
+
+  .fire-btn {
+    width: 100%; padding: .65rem; background: #1a0f14; border: 1px solid #5a2030;
+    border-radius: 8px; color: #e24b4a; font-family: 'Courier New', monospace;
+    font-size: 12px; letter-spacing: .1em; text-transform: uppercase; cursor: pointer;
+    margin-top: .75rem; transition: all .1s;
+  }
+  .fire-btn:active, .fire-btn.active { background: #3a0f18; border-color: #e24b4a; }
+
+  .mode-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .4rem; }
+  .mode-btn {
+    padding: .5rem .2rem; background: #0f1724; border: 1px solid #1f2a38;
+    border-radius: 6px; color: #5a7a9e; font-family: 'Courier New', monospace;
+    font-size: 11px; letter-spacing: .06em; cursor: pointer; text-align: center; transition: all .1s;
+  }
+  .mode-btn.active        { background: #0c2240; border-color: #378add; color: #89c4f4; }
+  .mode-btn.active.danger { background: #240c14; border-color: #e24b4a; color: #f08090; }
+
+  .slider-row { margin: .5rem 0; }
+  .slider-row label { font-size: 11px; color: #5a7a9e; display: flex; justify-content: space-between; margin-bottom: .35rem; }
+  .slider-row label span { color: #89c4f4; }
+  input[type=range] { width: 100%; accent-color: #378add; }
+
+  .demo-btn {
+    width: 100%; padding: .65rem; background: #0c2240; border: 1px solid #378add;
+    border-radius: 8px; color: #89c4f4; font-family: 'Courier New', monospace;
+    font-size: 12px; letter-spacing: .1em; text-transform: uppercase; cursor: pointer;
+    margin-top: .4rem; transition: all .1s;
+  }
+  .demo-btn.running { border-color: #f0a500; color: #f0c060; background: #221800; }
+
+  .ip-banner {
+    background: #221800; border: 1px solid #f0a500; border-radius: 8px;
+    padding: .65rem 1rem; font-size: 11px; color: #f0c060;
+    margin-bottom: 1rem; display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+  }
+  .ip-banner input {
+    background: #0a0e14; border: 1px solid #5a4010; border-radius: 4px;
+    color: #f0c060; font-family: 'Courier New', monospace; font-size: 11px;
+    padding: .25rem .5rem; flex: 1; min-width: 130px;
+  }
+  .ip-banner button {
+    background: #3a2800; border: 1px solid #f0a500; border-radius: 4px;
+    color: #f0c060; font-family: 'Courier New', monospace; font-size: 11px;
+    padding: .25rem .7rem; cursor: pointer; white-space: nowrap;
+  }
+  .ip-banner button:active { background: #5a3c00; }
+  .ws-badge {
+    font-size: 10px; padding: .15rem .5rem; border-radius: 3px;
+    border: 1px solid #253447; white-space: nowrap;
+    background: #131d2b; color: #5a7a9e;
+  }
+  .ws-badge.open        { background: #0c2808; color: #3dff8f; border-color: #1a4010; }
+  .ws-badge.connecting  { background: #221800; color: #f0a500; border-color: #5a4010; }
+  .ws-badge.closed      { background: #1a0a0a; color: #7a3030; border-color: #3a1a1a; }
+</style>
+</head>
+<body>
+
+<h1>&#9651; Pan / Tilt Laser Control</h1>
+
+<div class="ip-banner">
+  <span>ESP32 IP:</span>
+  <input type="text" id="esp-ip" value="192.168.1.100" placeholder="192.168.x.x">
+  <button onclick="wsConnect()">Connect</button>
+  <span class="ws-badge closed" id="ws-badge">disconnected</span>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <div class="card-title">System status</div>
+    <div class="status-row">
+      <div class="dot" id="conn-dot"></div>
+      <span class="lbl">WebSocket</span>
+      <span class="val" id="conn-lbl">Offline</span>
+    </div>
+    <div class="status-row">
+      <div class="dot" id="laser-dot"></div>
+      <span class="lbl">Laser</span>
+      <span class="val" id="laser-lbl">OFF</span>
+    </div>
+    <div class="status-row">
+      <div class="dot warn" id="mode-dot"></div>
+      <span class="lbl">Fire mode</span>
+      <span class="val" id="mode-lbl">Single</span>
+    </div>
+    <div class="pos-display">
+      <div class="pos-box">
+        <div class="axis">PAN</div>
+        <div class="deg" id="pan-deg">90°</div>
+        <div class="pos-bar"><div class="pos-fill" id="pan-fill" style="width:50%"></div></div>
+      </div>
+      <div class="pos-box">
+        <div class="axis">TILT</div>
+        <div class="deg" id="tilt-deg">90°</div>
+        <div class="pos-bar"><div class="pos-fill" id="tilt-fill" style="width:50%"></div></div>
+      </div>
+    </div>
+    <div class="ping-row">
+      <span class="ping-val">latency: <span id="ping-ms">—</span> ms</span>
+    </div>
+    <div class="log" id="log">
+      <div class="hi">> Enter ESP32 IP and click Connect.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">D-Pad &mdash; WASD / Arrow keys</div>
+    <div class="dpad">
+      <div></div>
+      <button id="btn-w">&#9650;</button>
+      <div></div>
+      <button id="btn-a">&#9664;</button>
+      <button id="btn-space" class="fire-center">&#9679;</button>
+      <button id="btn-d">&#9654;</button>
+      <div></div>
+      <button id="btn-s">&#9660;</button>
+      <div></div>
+    </div>
+    <button class="fire-btn" id="fire-btn">&#9632; FIRE LASER &nbsp;[SPACE]</button>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <div class="card-title">Fire mode</div>
+    <div class="mode-grid">
+      <button class="mode-btn active" id="mode-single" onclick="setMode('single')">Single</button>
+      <button class="mode-btn"        id="mode-burst"  onclick="setMode('burst')">Burst x3</button>
+      <button class="mode-btn"        id="mode-auto"   onclick="setMode('auto')">Full Auto</button>
+    </div>
+    <div class="slider-row" style="margin-top:.75rem">
+      <label>Burst interval <span id="burst-val">80 ms</span></label>
+      <input type="range" min="30" max="500" value="80" step="10"
+        oninput="document.getElementById('burst-val').textContent=this.value+' ms'; burstMs=+this.value">
+    </div>
+    <div class="slider-row">
+      <label>Laser pulse width <span id="pulse-val">200 ms</span></label>
+      <input type="range" min="50" max="1000" value="200" step="50"
+        oninput="document.getElementById('pulse-val').textContent=this.value+' ms'; pulseMs=+this.value">
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Movement</div>
+    <div class="slider-row">
+      <label>Step size <span id="smooth-val">5°</span></label>
+      <input type="range" min="1" max="15" value="5" step="1"
+        oninput="document.getElementById('smooth-val').textContent=this.value+'°'; stepSz=+this.value">
+    </div>
+    <div class="slider-row">
+      <label>Send rate <span id="rate-val">30 /s</span></label>
+      <input type="range" min="5" max="60" value="30" step="1"
+        oninput="document.getElementById('rate-val').textContent=this.value+' /s'; setSendRate(+this.value)">
+    </div>
+    <button class="demo-btn" id="demo-btn" onclick="runDemo()">&#9654; DEMO &mdash; Military sweep</button>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// WebSocket connection
+// ─────────────────────────────────────────────────────────────────────────────
+let ws = null;
+let wsReady = false;
+let reconnectTimer = null;
+let pingTs = 0;
+
+function wsConnect() {
+  const ip = document.getElementById('esp-ip').value.trim().replace(/^wss?:\/\//, '').replace(/\/+$/, '');
+  const url = `ws://${ip}:81`;
+  setBadge('connecting', 'connecting…');
+  addLog('Connecting to ' + url, 'hi');
+
+  if (ws) { ws.onclose = null; ws.close(); }
+
+  ws = new WebSocket(url);
+
+  ws.onopen = () => {
+    wsReady = true;
+    setBadge('open', 'WS open');
+    document.getElementById('conn-dot').className = 'dot on';
+    document.getElementById('conn-lbl').textContent = 'Connected';
+    addLog('WebSocket connected', 'hi');
+    clearTimeout(reconnectTimer);
+    startPing();
+  };
+
+  ws.onmessage = e => {
+    // Measure latency from ping
+    if (pingTs > 0) {
+      document.getElementById('ping-ms').textContent = (performance.now() - pingTs).toFixed(1);
+      pingTs = 0;
+    }
+    // Sync display from ESP state
+    try {
+      const d = JSON.parse(e.data);
+      if (d.p !== undefined) { pan = d.p; tilt = d.t; updateDisplay(); }
+    } catch {}
+  };
+
+  ws.onerror = () => {
+    addLog('WS error', 'warn');
+  };
+
+  ws.onclose = () => {
+    wsReady = false;
+    setBadge('closed', 'disconnected');
+    document.getElementById('conn-dot').className = 'dot';
+    document.getElementById('conn-lbl').textContent = 'Offline';
+    addLog('Disconnected — retrying in 3s', 'warn');
+    reconnectTimer = setTimeout(wsConnect, 3000);
+  };
+}
+
+function wsSend(msg) {
+  if (wsReady && ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(msg);
+  }
+}
+
+function setBadge(cls, txt) {
+  const b = document.getElementById('ws-badge');
+  b.className = 'ws-badge ' + cls;
+  b.textContent = txt;
+}
+
+// Ping: send current state, measure round-trip
+let pingInterval = null;
+function startPing() {
+  clearInterval(pingInterval);
+  pingInterval = setInterval(() => {
+    if (!wsReady) return;
+    pingTs = performance.now();
+    wsSend(`p=${pan}&t=${tilt}&l=${laserState}`);
+  }, 2000);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────────────────────────
+let pan = 90, tilt = 90, laserState = 0;
+let stepSz = 5, sendIntervalMs = 33, burstMs = 80, pulseMs = 200;
+let fireMode = 'single', demoRunning = false, autoFireTimer = null;
+let keys = {};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Send — only when state changed, throttled to send rate
+// ─────────────────────────────────────────────────────────────────────────────
+let lastSentPan = -1, lastSentTilt = -1, lastSentLaser = -1;
+let flushTimer = null;
+
+function setSendRate(hz) {
+  sendIntervalMs = Math.round(1000 / hz);
+  clearInterval(flushTimer);
+  flushTimer = setInterval(flushState, sendIntervalMs);
+}
+
+function flushState() {
+  if (!wsReady) return;
+  if (pan === lastSentPan && tilt === lastSentTilt && laserState === lastSentLaser) return;
+  lastSentPan = pan; lastSentTilt = tilt; lastSentLaser = laserState;
+  wsSend(`p=${pan}&t=${tilt}&l=${laserState}`);
+}
+
+// Force-flush (bypasses change check — used for laser events & demo)
+function sendNow() {
+  lastSentPan = -1;   // invalidate cache so flushState sends
+  flushState();
+}
+
+flushTimer = setInterval(flushState, sendIntervalMs);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Display
+// ─────────────────────────────────────────────────────────────────────────────
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+function updateDisplay() {
+  document.getElementById('pan-deg').textContent  = pan  + '°';
+  document.getElementById('tilt-deg').textContent = tilt + '°';
+  document.getElementById('pan-fill').style.width  = (pan  / 180 * 100) + '%';
+  document.getElementById('tilt-fill').style.width = (tilt / 180 * 100) + '%';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Movement loop — rAF for smooth input, sends via throttled flushState
+// ─────────────────────────────────────────────────────────────────────────────
+let lastMoveTs = 0;
+function moveLoop(ts) {
+  if (ts - lastMoveTs >= sendIntervalMs) {
+    lastMoveTs = ts;
+    let moved = false;
+    if (keys['a'] || keys['arrowleft'])  { pan  = clamp(pan  + stepSz, 0, 180); moved = true; }
+    if (keys['d'] || keys['arrowright']) { pan  = clamp(pan  - stepSz, 0, 180); moved = true; }
+    if (keys['w'] || keys['arrowup'])    { tilt = clamp(tilt + stepSz, 0, 180); moved = true; }
+    if (keys['s'] || keys['arrowdown'])  { tilt = clamp(tilt - stepSz, 0, 180); moved = true; }
+    if (moved) updateDisplay();
+  }
+  requestAnimationFrame(moveLoop);
+}
+requestAnimationFrame(moveLoop);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Keyboard
+// ─────────────────────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k)) {
+    e.preventDefault(); keys[k] = true; setBtnState(k, true);
+  }
+  if (k === ' ') { e.preventDefault(); fireLaser(); }
+});
+document.addEventListener('keyup', e => {
+  const k = e.key.toLowerCase();
+  keys[k] = false;
+  setBtnState(k, false);
+});
+
+const keyToBtn = {
+  w:'btn-w', a:'btn-a', s:'btn-s', d:'btn-d',
+  arrowup:'btn-w', arrowdown:'btn-s', arrowleft:'btn-a', arrowright:'btn-d'
+};
+function setBtnState(k, on) {
+  const id = keyToBtn[k];
+  if (id) document.getElementById(id).classList.toggle('pressed', on);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// D-Pad
+// ─────────────────────────────────────────────────────────────────────────────
+const btnKeyMap = { 'btn-w':'w', 'btn-a':'a', 'btn-s':'s', 'btn-d':'d' };
+
+['btn-w','btn-a','btn-s','btn-d','btn-space'].forEach(id => {
+  const el = document.getElementById(id);
+  const press   = () => { if (id === 'btn-space') { fireLaser(); return; } keys[btnKeyMap[id]] = true;  el.classList.add('pressed'); };
+  const release = () => { keys[btnKeyMap[id]] = false; el.classList.remove('pressed'); };
+  el.addEventListener('mousedown',  press);
+  el.addEventListener('mouseup',    release);
+  el.addEventListener('mouseleave', release);
+  el.addEventListener('touchstart', e => { e.preventDefault(); press(); },   { passive: false });
+  el.addEventListener('touchend',   e => { e.preventDefault(); release(); }, { passive: false });
+});
+
+document.getElementById('fire-btn').addEventListener('click', fireLaser);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Laser UI helper
+// ─────────────────────────────────────────────────────────────────────────────
+function setLaserUI(on, solid) {
+  document.getElementById('laser-dot').className = on ? (solid ? 'dot solid' : 'dot fire') : 'dot';
+  document.getElementById('laser-lbl').textContent = on ? (solid ? 'ON — AUTO' : 'FIRING') : 'OFF';
+  document.getElementById('fire-btn').classList.toggle('active', on);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fire laser
+// ─────────────────────────────────────────────────────────────────────────────
+function fireLaser() {
+  if (demoRunning) return;
+
+  if (fireMode === 'single') {
+    addLog('Fire!', 'fire');
+    laserState = 1; setLaserUI(true, false); sendNow();
+    setTimeout(() => { laserState = 0; setLaserUI(false); sendNow(); }, pulseMs);
+
+  } else if (fireMode === 'burst') {
+    addLog('Burst x3', 'fire');
+    let shot = 0;
+    const iv = setInterval(() => {
+      if (shot >= 3) { clearInterval(iv); laserState = 0; setLaserUI(false); sendNow(); return; }
+      laserState = 1; setLaserUI(true, false); sendNow();
+      setTimeout(() => { laserState = 0; sendNow(); }, 80);
+      shot++;
+    }, burstMs);
+
+  } else if (fireMode === 'auto') {
+    // Toggle: first press = lock ON, second press = turn OFF
+    if (autoFireTimer) {
+      clearInterval(autoFireTimer); autoFireTimer = null;
+      laserState = 0; setLaserUI(false); sendNow();
+      addLog('Auto-fire OFF', 'hi');
+      return;
+    }
+    addLog('Auto-fire ON — laser locked', 'fire');
+    laserState = 1; setLaserUI(true, true); sendNow();
+    // Keepalive: re-send every 500ms in case a WS message gets dropped
+    autoFireTimer = setInterval(() => {
+      laserState = 1; sendNow();
+    }, 500);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fire mode selector
+// ─────────────────────────────────────────────────────────────────────────────
+function setMode(m) {
+  if (autoFireTimer) { clearInterval(autoFireTimer); autoFireTimer = null; laserState = 0; setLaserUI(false); sendNow(); }
+  fireMode = m;
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active','danger'));
+  const el = document.getElementById('mode-' + m);
+  el.classList.add('active');
+  if (m === 'auto') el.classList.add('danger');
+  document.getElementById('mode-lbl').textContent = m.charAt(0).toUpperCase() + m.slice(1);
+  document.getElementById('mode-dot').className   = 'dot ' + (m === 'auto' ? 'fire' : 'warn');
+  addLog('Mode: ' + m, 'hi');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Demo sweep
+// ─────────────────────────────────────────────────────────────────────────────
+const demoSteps = [
+  { pan:10,  tilt:80 },
+  { pan:40,  tilt:65, fire:true },
+  { pan:70,  tilt:75 },
+  { pan:90,  tilt:90, fire:true },
+  { pan:120, tilt:70 },
+  { pan:150, tilt:80, fire:true },
+  { pan:170, tilt:90 },
+  { pan:130, tilt:100, fire:true },
+  { pan:90,  tilt:90 }
+];
+
+function runDemo() {
+  const btn = document.getElementById('demo-btn');
+  if (demoRunning) {
+    demoRunning = false;
+    btn.classList.remove('running');
+    btn.textContent = '▶ DEMO — Military sweep';
+    addLog('Demo stopped', 'hi');
+    return;
+  }
+  demoRunning = true;
+  btn.classList.add('running');
+  btn.textContent = '■ STOP DEMO';
+  addLog('Demo started', 'demo');
+
+  let i = 0;
+  function next() {
+    if (!demoRunning || i >= demoSteps.length) {
+      demoRunning = false;
+      btn.classList.remove('running');
+      btn.textContent = '▶ DEMO — Military sweep';
+      addLog('Demo complete', 'demo');
+      return;
+    }
+    const pt = demoSteps[i];
+    pan = pt.pan; tilt = pt.tilt;
+    updateDisplay(); sendNow();
+    if (pt.fire) {
+      setTimeout(() => {
+        laserState = 1; setLaserUI(true, false); sendNow();
+        addLog('Target!', 'fire');
+        setTimeout(() => { laserState = 0; setLaserUI(false); sendNow(); }, 300);
+      }, 250);
+    }
+    i++;
+    setTimeout(next, 700);
+  }
+  next();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Activity log
+// ─────────────────────────────────────────────────────────────────────────────
+function addLog(msg, cls) {
+  const log = document.getElementById('log');
+  const d   = document.createElement('div');
+  d.className   = cls || '';
+  d.textContent = '> ' + msg;
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+  if (log.children.length > 60) log.removeChild(log.firstChild);
+}
+
+updateDisplay();
+</script>
+</body>
+</html>
